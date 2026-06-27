@@ -2,11 +2,11 @@
 
 client_id = "4acdf397dc0221e62bc502d24dd34a22"
 name = "live metal price"
-application_url = "https://example.com"
+application_url = "https://live-metal-price.onrender.com"
 embedded = true
 
 [build]
-automatically_update_urls_on_dev = true
+automatically_update_urls_on_dev = false
 
 [webhooks]
 api_version = "2026-07"
@@ -16,4 +16,4 @@ api_version = "2026-07"
 scopes = "write_products"
 
 [auth]
-redirect_urls = [ "https://example.com/api/auth" ]
+redirect_urls = [ "https://onrender.com" ]
