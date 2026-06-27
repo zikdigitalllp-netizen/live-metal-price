@@ -1,10 +1,11 @@
 import { Stack, Text, Divider } from "@shopify/polaris";
 import { formatMoney } from "../lib/format";
 
-function Row({ label, value, strong }) {
+function Row({ label, value, strong, prefix }) {
   return (
     <Stack distribution="equalSpacing" alignment="center">
       <Text tone={strong ? undefined : "subdued"} as="span" variant={strong ? "headingSm" : "bodyMd"}>
+        {prefix && <span style={{ marginRight: "0.5rem" }}>{prefix}</span>}
         {label}
       </Text>
       <Text as="span" variant={strong ? "headingSm" : "bodyMd"} fontWeight={strong ? "bold" : undefined}>
@@ -19,17 +20,27 @@ export function PriceBreakdown({ breakdown, currency = "INR" }) {
   const m = (n) => formatMoney(n, currency, "en-IN");
   return (
     <Stack vertical spacing="extraTight">
-      <Row label="Base metal value (rate × weight)" value={m(breakdown.baseMetalValue)} />
-      <Row label="Making cost (weight × making)" value={m(breakdown.makingCost)} />
-      <Row label="Base / vendor price" value={m(breakdown.baseCost)} />
-      <Row label="GST amount" value={m(breakdown.gstAmount)} />
-      <Row label="After GST" value={m(breakdown.afterGst)} />
-      <Row label="Shipping" value={m(breakdown.shipping)} />
-      <Row label="Profit margin" value={m(breakdown.profitAmount)} />
+      <Row label="Metal Value" value={m(breakdown.baseMetalValue)} />
+      <Row label="Making Charges" value={m(breakdown.makingCost)} prefix="+" />
       <Divider />
-      <Row label="Final price" value={m(breakdown.finalPrice)} strong />
+      <Row label="Vendor Cost" value={m(breakdown.vendorCost)} />
+      <Row 
+        label={`Profit (${breakdown.inputs?.profitPercent || 0}%)`} 
+        value={m(breakdown.profitAmount)} 
+        prefix="+" 
+      />
+      <Divider />
+      <Row label="Selling Price (Before GST)" value={m(breakdown.sellingPriceBeforeGst)} />
+      <Row 
+        label={`GST (${breakdown.inputs?.gstPercent || 0}%)`} 
+        value={m(breakdown.gstAmount)} 
+        prefix="+" 
+      />
+      <Row label="Shipping" value={m(breakdown.shipping)} prefix="+" />
+      <Divider />
+      <Row label="Final Price" value={m(breakdown.finalPrice)} strong />
       {breakdown.compareAtPrice && (
-        <Row label="Compare at price" value={m(breakdown.compareAtPrice)} />
+        <Row label="Compare at Price" value={m(breakdown.compareAtPrice)} />
       )}
     </Stack>
   );

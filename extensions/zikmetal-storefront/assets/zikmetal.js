@@ -57,13 +57,29 @@
     var compareAtProfit = attrs.compare_at_profit_percent !== undefined && attrs.compare_at_profit_percent !== null ? Number(attrs.compare_at_profit_percent) : profit;
     var shipping = Number(attrs.shipping_cost) || 0;
 
-    var baseMetal = r * w;
-    var makingCost = w * making;
-    var baseCost = baseMetal + makingCost;
-    var gstAmount = baseCost * (gst / 100);
-    var afterGst = baseCost + gstAmount;
-    var finalPrice = (afterGst + shipping) * (1 + profit / 100);
-    var compareAtPrice = (afterGst + shipping) * (1 + compareAtProfit / 100);
+    // Step 1 - Metal Value
+    var metalValue = r * w;
+    
+    // Step 2 - Vendor Cost
+    var makingCharges = w * making;
+    var vendorCost = metalValue + makingCharges;
+
+    // Step 3 & 4 - Selling Price Before GST
+    var profitAmount = vendorCost * (profit / 100);
+    var sellingPriceBeforeGst = vendorCost + profitAmount;
+    
+    // Step 5 - GST
+    var gstAmount = sellingPriceBeforeGst * (gst / 100);
+
+    // Step 6 - Final Price
+    var finalPrice = sellingPriceBeforeGst + gstAmount + shipping;
+
+    // Calculate Compare-at Price using same logic
+    var compareAtProfitAmount = vendorCost * (compareAtProfit / 100);
+    var compareAtSellingPriceBeforeGst = vendorCost + compareAtProfitAmount;
+    var compareAtGstAmount = compareAtSellingPriceBeforeGst * (gst / 100);
+    var compareAtPrice = compareAtSellingPriceBeforeGst + compareAtGstAmount + shipping;
+
     return {
       finalPrice: Math.round(finalPrice * 100) / 100,
       compareAtPrice: Math.round(compareAtPrice * 100) / 100
