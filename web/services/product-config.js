@@ -268,7 +268,6 @@ export async function saveConfig(session, productId, patch) {
     const mutation = `
       mutation MetafieldsSet($metafields: [MetafieldsSetInput!]!) {
         metafieldsSet(metafields: $metafields) {
-          metafields { id key value namespace type owner { id } }
           userErrors { field message }
         }
       }
