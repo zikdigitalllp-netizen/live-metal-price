@@ -1,0 +1,7 @@
+api_version = "2025-07"
+
+[[extensions]]
+type = "theme"
+name = "ZikMetal Live Price"
+handle = "zikmetal-storefront"
+uid = "f3cc076f-2f15-eee3-fb8d-ebd40f780231301e27be"

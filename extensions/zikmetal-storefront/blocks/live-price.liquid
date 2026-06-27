@@ -1,0 +1,60 @@
+{% comment %}
+  ZikMetal Live Price — App Block
+  Add this inside your product template (Theme editor → Add block) for a
+  reliable, explicitly-bound live price element. The global script fills it in.
+{% endcomment %}
+
+<div
+  class="zikmetal-price-block"
+  data-zikmetal-product="{{ product.id }}"
+  data-zikmetal-base="{{ product.price | divided_by: 100.0 }}"
+  data-zikmetal-show-strike="{{ block.settings.show_strikethrough }}"
+  {{ block.shopify_attributes }}
+>
+  {% if block.settings.label != blank %}
+    <span class="zikmetal-price-block__label">{{ block.settings.label }}</span>
+  {% endif %}
+
+  <span class="zikmetal-price-block__amount" data-zikmetal-amount>
+    {%- comment -%} Rendered server-side as a graceful fallback until JS runs. {%- endcomment -%}
+    {{ product.price | money }}
+  </span>
+
+  <span class="zikmetal-price-block__original" data-zikmetal-original hidden></span>
+
+  <span class="zikmetal-price-block__status" data-zikmetal-status hidden>
+    {{ block.settings.live_label | default: 'Live silver price' }}
+  </span>
+</div>
+
+{% schema %}
+{
+  "name": "ZikMetal Live Price",
+  "target": "section",
+  "enabled_on": {
+    "templates": ["product"]
+  },
+  "stylesheet": "zikmetal.css",
+  "javascript": "zikmetal.js",
+  "settings": [
+    {
+      "type": "text",
+      "id": "label",
+      "label": "Label above price",
+      "default": "price"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_strikethrough",
+      "label": "Show original price (strikethrough)",
+      "default": true
+    },
+    {
+      "type": "text",
+      "id": "live_label",
+      "label": "Live badge text",
+      "default": "Live silver price"
+    }
+  ]
+}
+{% endschema %}

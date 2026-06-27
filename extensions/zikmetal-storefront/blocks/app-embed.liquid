@@ -1,0 +1,106 @@
+{% comment %}
+  ZikMetal Live Pricing — App Embed
+  Toggle this on under Theme editor → App embeds. It loads the global price
+  replacer that swaps theme prices for live silver-rate prices everywhere.
+{% endcomment %}
+
+<script>
+  window.ZikMetalConfig = {
+    proxyBase: {{ block.settings.proxy_base | json }},
+    refreshSeconds: {{ block.settings.refresh_seconds | default: 30 | json }},
+    showStrikethrough: {{ block.settings.show_strikethrough | json }},
+    showSavings: {{ block.settings.show_savings | json }},
+    currency: {{ shop.currency | json }},
+    locale: {{ request.locale.iso_code | json }},
+    cardSelector: {{ block.settings.card_selector | json }},
+    productIdAttr: {{ block.settings.product_id_attr | json }},
+    priceSelector: {{ block.settings.price_selector | json }},
+    cartSelector: {{ block.settings.cart_selector | json }},
+    debug: {{ block.settings.debug | json }}
+  };
+
+  {% comment %} On product templates, expose the current product id to the script. {% endcomment %}
+  {% if template.name == 'product' and product %}
+    window.ZikMetalCurrentProduct = {
+      id: {{ product.id | json }},
+      basePrice: {{ product.price | divided_by: 100.0 | json }}
+    };
+  {% endif %}
+</script>
+<script src="{{ 'zikmetal.js' | asset_url }}" defer></script>
+<link rel="stylesheet" href="{{ 'zikmetal.css' | asset_url }}">
+
+{% schema %}
+{
+  "name": "ZikMetal Live Pricing",
+  "target": "body",
+  "settings": [
+    {
+      "type": "text",
+      "id": "proxy_base",
+      "label": "App Proxy base path",
+      "default": "/apps/zikmetal-live-price",
+      "info": "Storefront path that proxies to the app. Must match the App Proxy subpath."
+    },
+    {
+      "type": "range",
+      "id": "refresh_seconds",
+      "label": "Refresh interval (seconds)",
+      "min": 10,
+      "max": 300,
+      "step": 5,
+      "default": 30
+    },
+    {
+      "type": "checkbox",
+      "id": "show_strikethrough",
+      "label": "Show original price (strikethrough)",
+      "default": true
+    },
+    {
+      "type": "checkbox",
+      "id": "show_savings",
+      "label": "Show savings / markup badge",
+      "default": true
+    },
+    {
+      "type": "header",
+      "content": "Collection / listing detection"
+    },
+    {
+      "type": "text",
+      "id": "card_selector",
+      "label": "Product card selector",
+      "default": "[data-product-id], .card-wrapper, .grid__item",
+      "info": "Elements that wrap a single product on listing pages."
+    },
+    {
+      "type": "text",
+      "id": "product_id_attr",
+      "label": "Product id attribute",
+      "default": "data-product-id",
+      "info": "Attribute on the card (or a child) holding the numeric product id."
+    },
+    {
+      "type": "text",
+      "id": "price_selector",
+      "label": "Price element selector",
+      "default": ".price-item--regular, .price__regular .price-item, .price",
+      "info": "Price element inside a card / on the product page to replace."
+    },
+    {
+      "type": "text",
+      "id": "cart_selector",
+      "label": "Cart drawer / cart container selector",
+      "default": "#cart-drawer, .cart-drawer, #CartDrawer, cart-drawer, #main-cart-items",
+      "info": "Containers whose line-item prices should also be re-priced live."
+    },
+    {
+      "type": "checkbox",
+      "id": "debug",
+      "label": "Enable console debug logging",
+      "default": false
+    }
+  ]
+}
+{% endschema %}

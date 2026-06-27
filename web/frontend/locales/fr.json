@@ -1,0 +1,11 @@
+{
+  "NavigationMenu": {
+    "dashboard": "Dashboard",
+    "products": "Products",
+    "settings": "Settings"
+  },
+  "NotFound": {
+    "description": "Check the URL and try again, or use the navigation to find what you need.",
+    "heading": "There is no page at this address"
+  }
+}
