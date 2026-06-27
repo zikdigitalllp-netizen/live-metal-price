@@ -212,12 +212,12 @@ export async function saveConfig(session, productId, patch) {
   try {
     const client = new shopify.api.clients.Graphql({ session });
 
-    // Build metafields for metafieldsSet
+    // Build metafields for metafieldsSet - use single_line_text for compatibility
     const metafields = [
       {
         namespace: "zikmetal",
         key: "dynamic_pricing_enabled",
-        value: String(next.dynamic_pricing_enabled),
+        value: next.dynamic_pricing_enabled ? "true" : "false",
         type: "boolean",
         ownerId: gid,
       },
@@ -238,47 +238,51 @@ export async function saveConfig(session, productId, patch) {
       {
         namespace: "zikmetal",
         key: "gst_percent",
-        value: next.gst_percent !== null ? String(next.gst_percent) : "",
+        value: next.gst_percent !== null ? String(next.gst_percent) : "0",
         type: "number_decimal",
         ownerId: gid,
       },
       {
         namespace: "zikmetal",
         key: "profit_percent",
-        value: next.profit_percent !== null ? String(next.profit_percent) : "",
+        value: next.profit_percent !== null ? String(next.profit_percent) : "0",
         type: "number_decimal",
         ownerId: gid,
       },
       {
         namespace: "zikmetal",
         key: "compare_at_profit_percent",
-        value: next.compare_at_profit_percent !== null ? String(next.compare_at_profit_percent) : "",
+        value: next.compare_at_profit_percent !== null ? String(next.compare_at_profit_percent) : "0",
         type: "number_decimal",
         ownerId: gid,
       },
       {
         namespace: "zikmetal",
         key: "shipping_cost",
-        value: next.shipping_cost !== null ? String(next.shipping_cost) : "",
+        value: next.shipping_cost !== null ? String(next.shipping_cost) : "0",
         type: "number_decimal",
         ownerId: gid,
       },
     ];
 
+    console.log("[product-config] Saving metafields:", JSON.stringify(metafields, null, 2));
+
     const mutation = `
       mutation MetafieldsSet($metafields: [MetafieldsSetInput!]!) {
         metafieldsSet(metafields: $metafields) {
-          userErrors { field message }
+          metafields { id key value namespace type }
+          userErrors { field message code }
         }
       }
     `;
 
     const resp = await client.request(mutation, { variables: { metafields } });
+    console.log("[product-config] metafieldsSet response:", JSON.stringify(resp, null, 2));
 
     const userErrors = resp?.data?.metafieldsSet?.userErrors || [];
     if (userErrors.length > 0) {
       console.error("[product-config] saveConfig user errors:", userErrors);
-      throw new Error(userErrors.map(e => e.message).join(", "));
+      throw new Error(userErrors.map(e => `${e.field || 'unknown'}: ${e.message} (code: ${e.code})`).join(", "));
     }
 
     // Update cache
@@ -287,7 +291,7 @@ export async function saveConfig(session, productId, patch) {
 
     return next;
   } catch (error) {
-    console.error("[product-config] saveConfig failed:", error.message);
+    console.error("[product-config] saveConfig failed:", error);
     throw error;
   }
 }
