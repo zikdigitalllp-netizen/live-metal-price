@@ -17,7 +17,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   default_profit_percent: 24,
   default_compare_at_profit_percent: 24,
   default_shipping_cost: 100,
-  refresh_interval_seconds: 30,
+  refresh_interval_seconds: 14400, // 4 hours
   show_strikethrough: true,
   show_savings: true,
   auto_sync_on_refresh: true,
@@ -46,7 +46,7 @@ function normalize(raw) {
     default_profit_percent: Number(raw?.default_profit_percent ?? DEFAULT_SETTINGS.default_profit_percent),
     default_compare_at_profit_percent: Number(raw?.default_compare_at_profit_percent ?? DEFAULT_SETTINGS.default_compare_at_profit_percent),
     default_shipping_cost: Number(raw?.default_shipping_cost ?? DEFAULT_SETTINGS.default_shipping_cost),
-    refresh_interval_seconds: Number(raw?.refresh_interval_seconds ?? DEFAULT_SETTINGS.refresh_interval_seconds) || 30,
+    refresh_interval_seconds: Number(raw?.refresh_interval_seconds ?? DEFAULT_SETTINGS.refresh_interval_seconds) || 14400,
     show_strikethrough: bool(raw?.show_strikethrough, DEFAULT_SETTINGS.show_strikethrough),
     show_savings: bool(raw?.show_savings, DEFAULT_SETTINGS.show_savings),
     auto_sync_on_refresh: bool(raw?.auto_sync_on_refresh, DEFAULT_SETTINGS.auto_sync_on_refresh),

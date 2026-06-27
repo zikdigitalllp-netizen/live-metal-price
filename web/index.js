@@ -350,8 +350,8 @@ if (!process.env.VERCEL) {
       app.listen(PORT, () => {
         console.log(`ZikMetal backend listening on :${PORT}`);
         
-        // Start background sync every 30 seconds (matches default refresh interval)
-        const refreshIntervalMs = 30 * 1000;
+        // Start background sync every 4 hours
+        const refreshIntervalMs = 4 * 60 * 60 * 1000;
         setInterval(runBackgroundSync, refreshIntervalMs);
         console.log(`[bg-sync] Started background sync, running every ${refreshIntervalMs / 1000}s`);
         

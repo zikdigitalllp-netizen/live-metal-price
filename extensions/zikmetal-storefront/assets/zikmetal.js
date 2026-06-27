@@ -24,7 +24,7 @@
   var API = PROXY_BASE + "/api";
 
   var defaults = {
-    refreshSeconds: 30,
+    refreshSeconds: 14400,
     showStrikethrough: true,
     showSavings: true,
     currency: (CFG.currency || "INR"),
