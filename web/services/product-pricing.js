@@ -111,7 +111,11 @@ export async function fetchProductsWithPricing(session, settings, opts = {}) {
 
   const products = (resp?.data?.products?.edges || []).map((e) => {
     const numeric = toNumericId(e.node.id);
-    const metafields = (e.node.metafields?.edges || []).map((mf) => mf.node);
+    // Safe extraction
+    const metafieldsEdges = e.node.metafields?.edges || [];
+    const metafields = Array.isArray(metafieldsEdges) 
+      ? metafieldsEdges.map(mf => mf?.node).filter(Boolean) 
+      : [];
     const config = normalizeConfig(metafields);
     return buildRow(e.node, config, settings, silverRateData.rate);
   });
@@ -150,7 +154,11 @@ export async function fetchPricesForIds(session, settings, ids) {
   for (const node of resp?.data?.nodes || []) {
     if (!node || !node.id) continue;
     const numeric = toNumericId(node.id);
-    const metafields = (node.metafields?.edges || []).map((mf) => mf.node);
+    // Safe extraction
+    const metafieldsEdges = node.metafields?.edges || [];
+    const metafields = Array.isArray(metafieldsEdges) 
+      ? metafieldsEdges.map(mf => mf?.node).filter(Boolean) 
+      : [];
     const config = normalizeConfig(metafields);
     const row = buildRow(node, config, settings, silverRateData.rate);
     prices[numeric] = {
@@ -190,7 +198,11 @@ export async function fetchSingleSyncTarget(session, settings, productId) {
   
   if (!resp?.data?.product) return null;
   
-  const metafields = (resp.data.product.metafields?.edges || []).map((mf) => mf.node);
+  // Safe extraction
+  const metafieldsEdges = resp.data.product.metafields?.edges || [];
+  const metafields = Array.isArray(metafieldsEdges) 
+    ? metafieldsEdges.map(mf => mf?.node).filter(Boolean) 
+    : [];
   const config = normalizeConfig(metafields);
   const row = buildRow(resp.data.product, config, settings, silverRateData.rate);
   if (!row.dynamicPricingEnabled || row.calculatedPrice <= 0) return null;

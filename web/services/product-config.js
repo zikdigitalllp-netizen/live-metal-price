@@ -31,23 +31,34 @@ export function toNumericId(id) {
   return m ? m[1] : s;
 }
 
-export function normalizeConfig(metafields = []) {
+// Normalize a config object (from patch or existing data)
+function normalizeConfigObject(obj) {
+  const config = obj || {};
+  return {
+    dynamic_pricing_enabled: config.dynamic_pricing_enabled === true || config.dynamic_pricing_enabled === "true",
+    weight_grams: Number(config.weight_grams) || 0,
+    making_charge_per_gram: Number(config.making_charge_per_gram) || 0,
+    gst_percent: config.gst_percent === undefined || config.gst_percent === "" || config.gst_percent === null ? null : Number(config.gst_percent),
+    profit_percent: config.profit_percent === undefined || config.profit_percent === "" || config.profit_percent === null ? null : Number(config.profit_percent),
+    compare_at_profit_percent: config.compare_at_profit_percent === undefined || config.compare_at_profit_percent === "" || config.compare_at_profit_percent === null ? null : Number(config.compare_at_profit_percent),
+    shipping_cost: config.shipping_cost === undefined || config.shipping_cost === "" || config.shipping_cost === null ? null : Number(config.shipping_cost),
+  };
+}
+
+// Normalize from metafields array
+export function normalizeConfig(metafields) {
+  // Ensure metafields is always an array
+  const safeMetafields = Array.isArray(metafields) ? metafields : [];
+  
   // Convert metafields array to object
   const mfObj = {};
-  for (const mf of metafields) {
+  for (const mf of safeMetafields) {
     if (!mf?.key) continue;
     mfObj[mf.key] = mf.value;
   }
 
-  return {
-    dynamic_pricing_enabled: mfObj.dynamic_pricing_enabled === true || mfObj.dynamic_pricing_enabled === "true",
-    weight_grams: Number(mfObj.weight_grams) || 0,
-    making_charge_per_gram: Number(mfObj.making_charge_per_gram) || 0,
-    gst_percent: mfObj.gst_percent === undefined || mfObj.gst_percent === "" || mfObj.gst_percent === null ? null : Number(mfObj.gst_percent),
-    profit_percent: mfObj.profit_percent === undefined || mfObj.profit_percent === "" || mfObj.profit_percent === null ? null : Number(mfObj.profit_percent),
-    compare_at_profit_percent: mfObj.compare_at_profit_percent === undefined || mfObj.compare_at_profit_percent === "" || mfObj.compare_at_profit_percent === null ? null : Number(mfObj.compare_at_profit_percent),
-    shipping_cost: mfObj.shipping_cost === undefined || mfObj.shipping_cost === "" || mfObj.shipping_cost === null ? null : Number(mfObj.shipping_cost),
-  };
+  // Use the same normalization for consistency
+  return normalizeConfigObject(mfObj);
 }
 
 /** Helper to load all products with zikmetal metafields for a shop */
@@ -94,7 +105,11 @@ async function loadShopFromMetafields(session) {
       for (const edge of products) {
         if (!edge?.node?.id) continue;
         const numericId = toNumericId(edge.node.id);
-        const metafields = (edge.node.metafields?.edges || []).map(e => e.node);
+        // Safe extraction of metafields
+        const metafieldsEdges = edge.node.metafields?.edges || [];
+        const metafields = Array.isArray(metafieldsEdges) 
+          ? metafieldsEdges.map(e => e?.node).filter(Boolean) 
+          : [];
         map.set(numericId, normalizeConfig(metafields));
       }
 
@@ -143,8 +158,12 @@ export async function getConfig(session, productId) {
       }
     `;
 
-    const resp = await client.request(query, { variables: { id: gid } });
-    const metafields = (resp?.data?.product?.metafields?.edges || []).map(e => e.node);
+    const resp = await client.request(query, { variables: { id: gid } });      
+    // Safe extraction of metafields
+    const metafieldsEdges = resp?.data?.product?.metafields?.edges || [];
+    const metafields = Array.isArray(metafieldsEdges) 
+      ? metafieldsEdges.map(e => e?.node).filter(Boolean) 
+      : [];
     const config = normalizeConfig(metafields);
     map.set(toNumericId(productId), config);
     return config;
@@ -185,7 +204,7 @@ export async function saveConfig(session, productId, patch) {
   }
 
   const current = map.get(id) || {};
-  const next = normalizeConfig({
+  const next = normalizeConfigObject({
     ...current,
     ...patch,
   });
