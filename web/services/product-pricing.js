@@ -2,12 +2,11 @@
 import shopify from "../shopify.js";
 import { fetchMCXSilverRate } from "./metals-api.js";
 import { calculatePrice, resolveAttributes } from "./pricing.js";
-import { getAllConfigs, getConfig, toNumericId } from "./product-config.js";
+import { getAllConfigs, getConfig, toNumericId, normalizeConfig } from "./product-config.js";
 
 /**
- * Product catalog fields. NOTE: we read core product data (title, image, base
- * price, variants) from the Admin API, but the PRICING ATTRIBUTES come from the
- * app's own store (product-config.js) — never from metafields.
+ * Product catalog fields. We read core product data (title, image, base
+ * price, variants) from the Admin API, plus zikmetal metafields.
  */
 const PRODUCT_FIELDS = `
   id
@@ -16,6 +15,15 @@ const PRODUCT_FIELDS = `
   status
   featuredImage { url altText }
   priceRangeV2 { minVariantPrice { amount currencyCode } }
+  metafields(first: 20, namespace: "zikmetal") {
+    edges {
+      node {
+        key
+        value
+        type
+      }
+    }
+  }
   variants(first: 50) {
     edges { node { id title price } }
   }
@@ -96,15 +104,16 @@ export async function fetchProductsWithPricing(session, settings, opts = {}) {
     }
   `;
 
-  const [resp, silverRateData, configs] = await Promise.all([
+  const [resp, silverRateData] = await Promise.all([
     client.request(query, { variables: { first } }),
     fetchMCXSilverRate(settings.metals_api_key || "", settings),
-    getAllConfigs(session),
   ]);
 
   const products = (resp?.data?.products?.edges || []).map((e) => {
     const numeric = toNumericId(e.node.id);
-    return buildRow(e.node, configs[numeric] || null, settings, silverRateData.rate);
+    const metafields = (e.node.metafields?.edges || []).map((mf) => mf.node);
+    const config = normalizeConfig(metafields);
+    return buildRow(e.node, config, settings, silverRateData.rate);
   });
 
   return { products, silverRate: silverRateData };
@@ -132,17 +141,18 @@ export async function fetchPricesForIds(session, settings, ids) {
     }
   `;
 
-  const [resp, silverRateData, configs] = await Promise.all([
+  const [resp, silverRateData] = await Promise.all([
     client.request(query, { variables: { ids: gids } }),
     fetchMCXSilverRate(settings.metals_api_key || "", settings),
-    getAllConfigs(session),
   ]);
 
   const prices = {};
   for (const node of resp?.data?.nodes || []) {
     if (!node || !node.id) continue;
     const numeric = toNumericId(node.id);
-    const row = buildRow(node, configs[numeric] || null, settings, silverRateData.rate);
+    const metafields = (node.metafields?.edges || []).map((mf) => mf.node);
+    const config = normalizeConfig(metafields);
+    const row = buildRow(node, config, settings, silverRateData.rate);
     prices[numeric] = {
       dynamicPricingEnabled: row.dynamicPricingEnabled,
       price: row.dynamicPricingEnabled ? row.calculatedPrice : null,
@@ -173,14 +183,15 @@ export async function fetchSingleSyncTarget(session, settings, productId) {
     }
   `;
   
-  const [resp, silverRateData, config] = await Promise.all([
+  const [resp, silverRateData] = await Promise.all([
     client.request(query, { variables: { id: gid } }),
     fetchMCXSilverRate(settings.metals_api_key || "", settings),
-    getConfig(session, productId),
   ]);
   
   if (!resp?.data?.product) return null;
   
+  const metafields = (resp.data.product.metafields?.edges || []).map((mf) => mf.node);
+  const config = normalizeConfig(metafields);
   const row = buildRow(resp.data.product, config, settings, silverRateData.rate);
   if (!row.dynamicPricingEnabled || row.calculatedPrice <= 0) return null;
   

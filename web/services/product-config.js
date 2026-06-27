@@ -1,18 +1,18 @@
 // @ts-check
-import db, { ready } from "./db.js";
+import shopify from "../shopify.js";
 
 /**
- * Per-product pricing attributes, stored in the app's own SQLite table — NOT in
- * Shopify product metafields. The app is the single source of truth for every
- * product's weight, making charge, GST, profit and shipping.
+ * Per-product pricing attributes, stored in Shopify Product Metafields
+ * with namespace "zikmetal".
  *
- * Stored shape (JSON per product):
+ * Stored shape:
  *   {
  *     dynamic_pricing_enabled: boolean,
  *     weight_grams: number,
  *     making_charge_per_gram: number,
  *     gst_percent: number,
  *     profit_percent: number,
+ *     compare_at_profit_percent: number,
  *     shipping_cost: number
  *   }
  */
@@ -31,63 +31,140 @@ export function toNumericId(id) {
   return m ? m[1] : s;
 }
 
-function normalizeConfig(raw) {
+export function normalizeConfig(metafields = []) {
+  // Convert metafields array to object
+  const mfObj = {};
+  for (const mf of metafields) {
+    if (!mf?.key) continue;
+    mfObj[mf.key] = mf.value;
+  }
+
   return {
-    dynamic_pricing_enabled:
-      raw?.dynamic_pricing_enabled === true || raw?.dynamic_pricing_enabled === "true",
-    weight_grams: Number(raw?.weight_grams) || 0,
-    making_charge_per_gram: Number(raw?.making_charge_per_gram) || 0,
-    gst_percent: raw?.gst_percent === undefined || raw?.gst_percent === "" ? null : Number(raw.gst_percent),
-    profit_percent:
-      raw?.profit_percent === undefined || raw?.profit_percent === "" ? null : Number(raw.profit_percent),
-    compare_at_profit_percent:
-      raw?.compare_at_profit_percent === undefined || raw?.compare_at_profit_percent === "" ? null : Number(raw.compare_at_profit_percent),
-    shipping_cost:
-      raw?.shipping_cost === undefined || raw?.shipping_cost === "" ? null : Number(raw.shipping_cost),
+    dynamic_pricing_enabled: mfObj.dynamic_pricing_enabled === true || mfObj.dynamic_pricing_enabled === "true",
+    weight_grams: Number(mfObj.weight_grams) || 0,
+    making_charge_per_gram: Number(mfObj.making_charge_per_gram) || 0,
+    gst_percent: mfObj.gst_percent === undefined || mfObj.gst_percent === "" || mfObj.gst_percent === null ? null : Number(mfObj.gst_percent),
+    profit_percent: mfObj.profit_percent === undefined || mfObj.profit_percent === "" || mfObj.profit_percent === null ? null : Number(mfObj.profit_percent),
+    compare_at_profit_percent: mfObj.compare_at_profit_percent === undefined || mfObj.compare_at_profit_percent === "" || mfObj.compare_at_profit_percent === null ? null : Number(mfObj.compare_at_profit_percent),
+    shipping_cost: mfObj.shipping_cost === undefined || mfObj.shipping_cost === "" || mfObj.shipping_cost === null ? null : Number(mfObj.shipping_cost),
   };
 }
 
-async function loadShop(shop) {
-  if (cache.has(shop)) return cache.get(shop);
-  await ready();
+/** Helper to load all products with zikmetal metafields for a shop */
+async function loadShopFromMetafields(session) {
+  const shop = shopOf(session);
   const map = new Map();
+  const client = new shopify.api.clients.Graphql({ session });
+
   try {
-    const rows = await db.all(
-      `SELECT product_id, data FROM zikmetal_product_config WHERE shop = ?`,
-      [shop]
-    );
-    for (const row of rows) {
-      try {
-        map.set(String(row.product_id), normalizeConfig(JSON.parse(row.data)));
-      } catch {
-        /* skip corrupt row */
+    // Fetch all products with their zikmetal metafields
+    let hasNext = true;
+    let cursor = null;
+
+    while (hasNext) {
+      const query = `
+        query Products($first: Int!, $after: String) {
+          products(first: $first, after: $after) {
+            edges {
+              cursor
+              node {
+                id
+                metafields(first: 20, namespace: "zikmetal") {
+                  edges {
+                    node {
+                      key
+                      value
+                      type
+                    }
+                  }
+                }
+              }
+            }
+            pageInfo { hasNextPage }
+          }
+        }
+      `;
+
+      const resp = await client.request(query, {
+        variables: { first: 100, after: cursor },
+      });
+
+      const products = resp?.data?.products?.edges || [];
+
+      for (const edge of products) {
+        if (!edge?.node?.id) continue;
+        const numericId = toNumericId(edge.node.id);
+        const metafields = (edge.node.metafields?.edges || []).map(e => e.node);
+        map.set(numericId, normalizeConfig(metafields));
       }
+
+      hasNext = resp?.data?.products?.pageInfo?.hasNextPage || false;
+      cursor = products.length > 0 ? products[products.length - 1].cursor : null;
     }
   } catch (error) {
-    console.error("[product-config] load failed:", error.message);
+    console.error("[product-config] load from metafields failed:", error.message);
   }
+
   cache.set(shop, map);
   return map;
 }
 
 /** Get the raw stored config for a single product (or null if none). */
-export async function getConfig(sessionOrShop, productId) {
-  const shop = shopOf(sessionOrShop);
-  const map = await loadShop(shop);
-  return map.get(toNumericId(productId)) || null;
+export async function getConfig(session, productId) {
+  const shop = shopOf(session);
+  let map = cache.get(shop);
+
+  if (!map) {
+    map = await loadShopFromMetafields(session);
+  }
+
+  if (map.has(toNumericId(productId))) {
+    return map.get(toNumericId(productId));
+  }
+
+  // Fetch single product if not in cache
+  try {
+    const client = new shopify.api.clients.Graphql({ session });
+    const gid = `gid://shopify/Product/${toNumericId(productId)}`;
+    const query = `
+      query Product($id: ID!) {
+        product(id: $id) {
+          id
+          metafields(first: 20, namespace: "zikmetal") {
+            edges {
+              node {
+                key
+                value
+                type
+              }
+            }
+          }
+        }
+      }
+    `;
+
+    const resp = await client.request(query, { variables: { id: gid } });
+    const metafields = (resp?.data?.product?.metafields?.edges || []).map(e => e.node);
+    const config = normalizeConfig(metafields);
+    map.set(toNumericId(productId), config);
+    return config;
+  } catch (error) {
+    console.error("[product-config] get single config failed:", error.message);
+    return null;
+  }
 }
 
 /** Get all stored configs for a shop as a plain object keyed by numeric id. */
-export async function getAllConfigs(sessionOrShop) {
-  const shop = shopOf(sessionOrShop);
-  const map = await loadShop(shop);
+export async function getAllConfigs(session) {
+  const shop = shopOf(session);
+  const map = await loadShopFromMetafields(session);
   return Object.fromEntries(map.entries());
 }
 
 /** Numeric ids of products that currently have dynamic pricing enabled. */
-export async function getEnabledIds(sessionOrShop) {
-  const shop = shopOf(sessionOrShop);
-  const map = await loadShop(shop);
+export async function getEnabledIds(session) {
+  const shop = shopOf(session);
+  const map = await loadShopFromMetafields(session);
   const ids = [];
   for (const [id, cfg] of map.entries()) {
     if (cfg.dynamic_pricing_enabled) ids.push(id);
@@ -95,25 +172,106 @@ export async function getEnabledIds(sessionOrShop) {
   return ids;
 }
 
-/** Upsert a product's config and refresh the cache. */
-export async function saveConfig(sessionOrShop, productId, patch) {
-  const shop = shopOf(sessionOrShop);
+/** Upsert a product's config into Shopify Product Metafields and refresh the cache. */
+export async function saveConfig(session, productId, patch) {
+  const shop = shopOf(session);
   if (!shop) throw new Error("Cannot save product config without a shop");
   const id = toNumericId(productId);
+  const gid = `gid://shopify/Product/${id}`;
 
-  const map = await loadShop(shop);
-  const next = normalizeConfig({ ...(map.get(id) || {}), ...patch });
+  let map = cache.get(shop);
+  if (!map) {
+    map = await loadShopFromMetafields(session);
+  }
 
-  await ready();
-  await db.run(
-    `INSERT INTO zikmetal_product_config (shop, product_id, data, updated_at)
-     VALUES (?, ?, ?, ?)
-     ON CONFLICT(shop, product_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`,
-    [shop, id, JSON.stringify(next), new Date().toISOString()]
-  );
+  const current = map.get(id) || {};
+  const next = normalizeConfig({
+    ...current,
+    ...patch,
+  });
 
-  map.set(id, next);
-  return next;
+  try {
+    const client = new shopify.api.clients.Graphql({ session });
+
+    // Build metafields for metafieldsSet
+    const metafields = [
+      {
+        namespace: "zikmetal",
+        key: "dynamic_pricing_enabled",
+        value: String(next.dynamic_pricing_enabled),
+        type: "boolean",
+        ownerId: gid,
+      },
+      {
+        namespace: "zikmetal",
+        key: "weight_grams",
+        value: String(next.weight_grams),
+        type: "number_decimal",
+        ownerId: gid,
+      },
+      {
+        namespace: "zikmetal",
+        key: "making_charge_per_gram",
+        value: String(next.making_charge_per_gram),
+        type: "number_decimal",
+        ownerId: gid,
+      },
+      {
+        namespace: "zikmetal",
+        key: "gst_percent",
+        value: next.gst_percent !== null ? String(next.gst_percent) : "",
+        type: "number_decimal",
+        ownerId: gid,
+      },
+      {
+        namespace: "zikmetal",
+        key: "profit_percent",
+        value: next.profit_percent !== null ? String(next.profit_percent) : "",
+        type: "number_decimal",
+        ownerId: gid,
+      },
+      {
+        namespace: "zikmetal",
+        key: "compare_at_profit_percent",
+        value: next.compare_at_profit_percent !== null ? String(next.compare_at_profit_percent) : "",
+        type: "number_decimal",
+        ownerId: gid,
+      },
+      {
+        namespace: "zikmetal",
+        key: "shipping_cost",
+        value: next.shipping_cost !== null ? String(next.shipping_cost) : "",
+        type: "number_decimal",
+        ownerId: gid,
+      },
+    ];
+
+    const mutation = `
+      mutation MetafieldsSet($metafields: [MetafieldsSetInput!]!) {
+        metafieldsSet(metafields: $metafields) {
+          metafields { id key value namespace type owner { id } }
+          userErrors { field message }
+        }
+      }
+    `;
+
+    const resp = await client.request(mutation, { variables: { metafields } });
+
+    const userErrors = resp?.data?.metafieldsSet?.userErrors || [];
+    if (userErrors.length > 0) {
+      console.error("[product-config] saveConfig user errors:", userErrors);
+      throw new Error(userErrors.map(e => e.message).join(", "));
+    }
+
+    // Update cache
+    map.set(id, next);
+    cache.set(shop, map);
+
+    return next;
+  } catch (error) {
+    console.error("[product-config] saveConfig failed:", error.message);
+    throw error;
+  }
 }
 
 /** Drop the in-memory cache for a shop (used on uninstall). */

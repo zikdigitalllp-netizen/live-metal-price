@@ -16,4 +16,4 @@ api_version = "2026-07"
 scopes = "write_products"
 
 [auth]
-redirect_urls = [ "https://onrender.com" ]
+redirect_urls = [ "https://live-metal-price.onrender.com/api/auth/callback" ]

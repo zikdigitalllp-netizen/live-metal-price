@@ -187,7 +187,7 @@ app.get("/api/products/prices", async (req, res) => {
   }
 });
 
-// --- Per-product config (stored in the app's own DB, NOT metafields) -------
+// --- Per-product config (stored in Shopify Product Metafields) -------
 app.get("/api/product/:id/config", async (req, res) => {
   try {
     const config = await getConfig(session(res), req.params.id);
