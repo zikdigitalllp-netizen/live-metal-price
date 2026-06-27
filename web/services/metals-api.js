@@ -25,7 +25,7 @@ const CACHE_KEY = "mcx_silver_rate";
 const LAST_GOOD_KEY = "mcx_silver_rate_last_good";
 const LAST_FETCH_TIME_KEY = "mcx_silver_rate_last_fetch_time";
 const PROVIDER_URL = "https://api.metals.dev/v1/metal/authority";
-const MOCK_RATE_INR_PER_GRAM = 92.5;
+const MOCK_RATE_INR_PER_GRAM = 240;
 
 // Persist cache for longer since we only update twice daily
 const cache = new NodeCache({ stdTTL: 60 * 60 * 24 * 2, checkperiod: 60 * 60 }); // 2 days TTL
