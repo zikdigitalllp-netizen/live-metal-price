@@ -72,11 +72,19 @@ export default function Products() {
         </Stack>
       </IndexTable.Cell>
       <IndexTable.Cell>
-        {p.dynamicPricingEnabled ? (
-          <Badge status="success">Dynamic</Badge>
-        ) : (
-          <Badge>Base price</Badge>
-        )}
+        <Stack spacing="extraTight">
+          {p.dynamicPricingEnabled ? (
+            <Badge status="success">Dynamic</Badge>
+          ) : (
+            <Badge>Base price</Badge>
+          )}
+          {p.hasVariants && p.variantPricingMode === "weight" ? (
+            <Badge status="info">Per-variant weight</Badge>
+          ) : null}
+          {p.hasVariants && p.variantPricingMode === "manual" ? (
+            <Badge status="info">Manual variant pricing</Badge>
+          ) : null}
+        </Stack>
       </IndexTable.Cell>
       <IndexTable.Cell>
         <Text as="span" alignment="end" numeric>

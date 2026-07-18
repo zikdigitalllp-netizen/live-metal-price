@@ -67,9 +67,17 @@ router.get("/api/product/:id/price", async (req, res) => {
       dynamicPricingEnabled: false,
       price: null,
     };
+    // Additive: if the caller knows which variant is selected, resolve its
+    // specific price when variant pricing is active. Falls back to `price`
+    // (the base/product-level price) for simple products and any variant
+    // not present in the map — identical to pre-existing behavior.
+    const variantId = req.query.variant_id ? String(req.query.variant_id) : null;
+    const variantEntry = variantId ? entry.variants?.[variantId] : null;
     res.status(200).json({
       productId: req.params.id,
       ...entry,
+      resolvedPrice: variantEntry ? variantEntry.price : entry.price,
+      resolvedCompareAtPrice: variantEntry ? variantEntry.compareAtPrice : entry.compareAtPrice,
       silverRate,
     });
   } catch (error) {

@@ -8,6 +8,7 @@
   class="zikmetal-price-block"
   data-zikmetal-product="{{ product.id }}"
   data-zikmetal-base="{{ product.price | divided_by: 100.0 }}"
+  data-zikmetal-variant="{{ product.selected_or_first_available_variant.id }}"
   data-zikmetal-show-strike="{{ block.settings.show_strikethrough }}"
   {{ block.shopify_attributes }}
 >

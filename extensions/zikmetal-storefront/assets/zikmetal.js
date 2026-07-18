@@ -91,9 +91,14 @@
    * -------------------------------------------------------------------- */
   var state = {
     rate: null, // { rate, slot, currency, ... }
-    products: {}, // numericId -> { enabled, attributes, basePrice, price, currencyCode }
-    registry: {}, // numericId -> [ {container, amount, original, status, basePrice} ]
+    products: {}, // numericId -> { enabled, attributes, basePrice, price, currencyCode, variants }
+    registry: {}, // numericId -> [ {container, amount, original, status, basePrice, variantId} ]
     pendingIds: {}, // ids discovered but not yet fetched
+    // Current PDP selected variant id, keyed by product id (numeric string).
+    // Falls back to the product's default price when a variant isn't found
+    // in the variants map — i.e. simple products and untouched multi-variant
+    // products behave exactly as they did before this was added.
+    currentVariant: {},
     started: false,
   };
 
@@ -205,7 +210,7 @@
     return { original: original, savings: savings };
   }
 
-  function register(productId, container, amountEl, basePriceAttr) {
+  function register(productId, container, amountEl, basePriceAttr, variantId) {
     if (!productId || !amountEl) return;
     if (amountEl.getAttribute("data-zikmetal-bound") === productId) return;
     amountEl.setAttribute("data-zikmetal-bound", productId);
@@ -221,6 +226,10 @@
       original: extra.original,
       savings: extra.savings,
       basePrice: basePrice,
+      // Variant this target represents, if known (PDP main price). Cards on
+      // listing pages generally don't know a variant, so this stays null and
+      // rendering falls back to the product's default price — unchanged.
+      variantId: variantId || null,
     });
     state.pendingIds[productId] = true;
   }
@@ -246,19 +255,23 @@
     Array.prototype.forEach.call(explicit, function (el) {
       var id = el.getAttribute("data-zikmetal-product");
       var amount = el.querySelector("[data-zikmetal-amount]") || el;
-      register(id, el, amount, el.getAttribute("data-zikmetal-base"));
+      register(id, el, amount, el.getAttribute("data-zikmetal-base"), el.getAttribute("data-zikmetal-variant"));
     });
 
     // 2. Current product page (theme price elements).
     if (window.ZikMetalCurrentProduct && window.ZikMetalCurrentProduct.id) {
       var pid = String(window.ZikMetalCurrentProduct.id);
       var base = window.ZikMetalCurrentProduct.basePrice;
+      var vid = window.ZikMetalCurrentProduct.variantId
+        ? String(window.ZikMetalCurrentProduct.variantId)
+        : null;
+      if (vid) state.currentVariant[pid] = vid;
       var scope =
         root.querySelector(".product, [id^='MainProduct'], main, #MainContent") || root;
       var priceEls = scope.querySelectorAll(settings.priceSelector);
       Array.prototype.forEach.call(priceEls, function (el) {
         if (el.closest("[data-zikmetal-product]")) return;
-        register(pid, el, el, base);
+        register(pid, el, el, base, vid);
       });
     }
 
@@ -284,19 +297,26 @@
     if (!data.enabled && !data.dynamicPricingEnabled) return; // leave theme price
 
     var attrs = data.attributes;
-    var priceResult = attrs ? calculatePrice(attrs, state.rate.rate) : { finalPrice: data.price };
-    var price = priceResult.finalPrice;
-    if (!price || price <= 0) return;
-
+    var defaultResult = attrs ? calculatePrice(attrs, state.rate.rate) : { finalPrice: data.price };
     var currency = data.currencyCode || settings.currency;
 
     targets.forEach(function (t) {
+      // Additive: if this target is bound to a specific variant AND that
+      // variant has its own server-computed price (weight-based or manual
+      // variant pricing), use it. Otherwise fall back to the product-level
+      // price exactly as before — simple products and unconfigured
+      // multi-variant products are unaffected.
+      var variantPriced = t.variantId && data.variants && data.variants[t.variantId];
+      var price = variantPriced ? variantPriced.price : defaultResult.finalPrice;
+      var compareAt = variantPriced ? variantPriced.compareAtPrice : defaultResult.compareAtPrice;
+      if (!price || price <= 0) return;
+
       var base = t.basePrice != null ? t.basePrice : data.basePrice;
       t.amount.textContent = money(price, currency);
       t.amount.setAttribute("data-zikmetal-live", "1");
 
       // Strike-through compare at price or original.
-      var strikePrice = priceResult.compareAtPrice || base;
+      var strikePrice = compareAt || base;
       if (settings.showStrikethrough && strikePrice && Math.abs(strikePrice - price) > 0.5) {
         t.original.textContent = money(strikePrice, currency);
         t.original.hidden = false;
@@ -305,7 +325,7 @@
       }
 
       // Savings / markup badge.
-      var savingsBase = base || priceResult.compareAtPrice;
+      var savingsBase = base || compareAt;
       if (settings.showSavings && savingsBase && savingsBase > 0 && Math.abs(savingsBase - price) > 0.5) {
         var diffPct = Math.round(((price - savingsBase) / savingsBase) * 100);
         if (diffPct < 0) {
@@ -356,13 +376,20 @@
     var pid = String(window.ZikMetalCurrentProduct.id);
     var data = state.products[pid];
     if (!data || !(data.enabled || data.dynamicPricingEnabled) || !data.attributes) return;
+
+    // Additive: reflect the selected variant's own price/weight when variant
+    // pricing is active for this product; otherwise identical to before.
+    var vid = state.currentVariant[pid];
+    var variantPriced = vid && data.variants && data.variants[vid];
     var priceResult = calculatePrice(data.attributes, state.rate.rate);
+    var finalPrice = variantPriced ? variantPriced.price : priceResult.finalPrice;
+    var weightGrams = data.attributes.weight_grams;
 
     var forms = document.querySelectorAll('form[action*="/cart/add"]');
     Array.prototype.forEach.call(forms, function (form) {
       setHidden(form, "properties[_zikmetal_silver_rate]", String(state.rate.rate));
-      setHidden(form, "properties[_zikmetal_weight_g]", String(data.attributes.weight_grams));
-      setHidden(form, "properties[_zikmetal_live_price]", String(priceResult.finalPrice));
+      setHidden(form, "properties[_zikmetal_weight_g]", String(weightGrams));
+      setHidden(form, "properties[_zikmetal_live_price]", String(finalPrice));
     });
   }
 
@@ -378,6 +405,63 @@
     }
     state.pendingIds = {};
     fetchPrices(ids).then(renderAll);
+  }
+
+  /* ----------------------------------------------------------------------
+   * Variant selection — keep the PDP price in sync with the picked variant.
+   * Additive: only affects rendering when the current product has variant
+   * pricing data; otherwise this is a no-op (currentVariant is simply
+   * unused by renderProduct's fallback path).
+   * -------------------------------------------------------------------- */
+  function applyVariantChange(pid, variantId) {
+    if (!pid || !variantId) return;
+    var vid = String(variantId);
+    if (state.currentVariant[pid] === vid) return;
+    state.currentVariant[pid] = vid;
+    var targets = state.registry[pid];
+    if (targets) {
+      targets.forEach(function (t) {
+        // Only re-bind targets that track "the" current PDP variant (i.e.
+        // were registered without a fixed variantId, or already tracked one).
+        if (t.variantId !== undefined) t.variantId = vid;
+      });
+    }
+    renderProduct(pid);
+    syncAddToCartProps();
+  }
+
+  function currentProductAndVariantFromForm(form) {
+    if (!window.ZikMetalCurrentProduct || !window.ZikMetalCurrentProduct.id) return null;
+    var idInput = form.querySelector('input[name="id"], select[name="id"]');
+    if (!idInput || !idInput.value) return null;
+    return { pid: String(window.ZikMetalCurrentProduct.id), variantId: idInput.value };
+  }
+
+  function hookVariantEvents() {
+    // 1. Native change on the variant id input/select present in most themes
+    //    (Dawn and derivatives keep a hidden/visible input[name="id"]).
+    document.addEventListener("change", function (e) {
+      var target = e.target;
+      if (!target || !target.name) return;
+      if (target.name !== "id") return;
+      var form = target.closest('form[action*="/cart/add"], form');
+      if (!form) return;
+      var info = currentProductAndVariantFromForm(form);
+      if (info) applyVariantChange(info.pid, info.variantId);
+    });
+
+    // 2. Common custom events themes dispatch on variant change, carrying the
+    //    new variant (id or object) in event.detail.
+    ["variant:change", "product:variant-change", "variantChange"].forEach(function (evtName) {
+      document.addEventListener(evtName, function (e) {
+        if (!window.ZikMetalCurrentProduct || !window.ZikMetalCurrentProduct.id) return;
+        var pid = String(window.ZikMetalCurrentProduct.id);
+        var detail = e.detail || {};
+        var variant = detail.variant || detail;
+        var variantId = variant && (variant.id || variant.variantId);
+        if (variantId) applyVariantChange(pid, variantId);
+      });
+    });
   }
 
   function hookCartEvents() {
@@ -451,6 +535,7 @@
     }, ms * 5);
 
     hookCartEvents();
+    hookVariantEvents();
 
     // Observe DOM for AJAX-loaded content (infinite scroll, quick view, drawer).
     var debounceTimer = null;

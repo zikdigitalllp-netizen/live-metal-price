@@ -15,6 +15,7 @@ import { calculatePrice } from "./services/pricing.js";
 import {
   fetchProductsWithPricing,
   fetchPricesForIds,
+  fetchVariantPricingView,
 } from "./services/product-pricing.js";
 import {
   getConfig,
@@ -204,6 +205,36 @@ app.put("/api/product/:id/config", async (req, res) => {
     res.status(200).json({ success: true, config: saved });
   } catch (error) {
     console.error("Error updating product config:", error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// --- Per-variant pricing (weight-based or manual-increment) ---------------
+// Additive endpoints. Only relevant for products with 2+ variants; simple
+// products never call these and are completely unaffected.
+app.get("/api/product/:id/variants", async (req, res) => {
+  try {
+    const settings = await getSettings(session(res));
+    const view = await fetchVariantPricingView(session(res), settings, req.params.id);
+    if (!view) return res.status(404).json({ error: "Product not found" });
+    res.status(200).json(view);
+  } catch (error) {
+    console.error("Error reading product variants:", error.message);
+    res.status(500).json({ error: "Failed to read product variants" });
+  }
+});
+
+app.put("/api/product/:id/variant-config", async (req, res) => {
+  try {
+    // variant_pricing lives alongside the existing per-product config
+    // metafields; saveConfig() only touches the one additional metafield
+    // when this key is present, everything else in the product is untouched.
+    const saved = await saveConfig(session(res), req.params.id, {
+      variant_pricing: req.body?.variant_pricing ?? null,
+    });
+    res.status(200).json({ success: true, config: saved });
+  } catch (error) {
+    console.error("Error updating variant pricing config:", error.message);
     res.status(500).json({ success: false, error: error.message });
   }
 });

@@ -67,3 +67,55 @@ export function calculatePrice({
     },
   };
 }
+
+export const DEFAULT_VARIANT_INCREMENT = 3000;
+
+/**
+ * Client mirror of calculateVariantPrices() on the server — used only for
+ * the live preview table while editing; the server recomputes authoritatively
+ * on save/sync.
+ *
+ * @param {Array<{id:string, title?:string}>} variants
+ * @param {object} baseAttrs same shape passed to calculatePrice() above (camelCase)
+ * @param {number} silverRate
+ * @param {{mode:"weight"|"manual"|null, increment?:number, variants?:Record<string,{weight_grams?:number}>}} variantPricing
+ */
+export function calculateVariantPrices(variants, baseAttrs, silverRate, variantPricing) {
+  const list = Array.isArray(variants) ? variants : [];
+  const mode = variantPricing?.mode;
+  if (!mode || list.length < 2) return [];
+
+  if (mode === "weight") {
+    const weightMap = variantPricing?.variants || {};
+    return list.map((v) => {
+      const override = weightMap[v.id];
+      const weightGrams =
+        override && override.weight_grams !== undefined && override.weight_grams !== null && override.weight_grams !== ""
+          ? Number(override.weight_grams)
+          : baseAttrs.weightGrams;
+      const breakdown = calculatePrice({ ...baseAttrs, weightGrams, silverRate });
+      return {
+        variantId: v.id,
+        title: v.title || "",
+        weightGrams,
+        price: breakdown.finalPrice,
+        compareAtPrice: breakdown.compareAtPrice,
+      };
+    });
+  }
+
+  if (mode === "manual") {
+    const inc = Number(variantPricing?.increment);
+    const step = Number.isFinite(inc) && inc >= 0 ? inc : DEFAULT_VARIANT_INCREMENT;
+    const base = calculatePrice({ ...baseAttrs, silverRate });
+    return list.map((v, index) => ({
+      variantId: v.id,
+      title: v.title || "",
+      weightGrams: index === 0 ? baseAttrs.weightGrams : null,
+      price: Number((base.finalPrice + step * index).toFixed(2)),
+      compareAtPrice: Number((base.compareAtPrice + step * index).toFixed(2)),
+    }));
+  }
+
+  return [];
+}

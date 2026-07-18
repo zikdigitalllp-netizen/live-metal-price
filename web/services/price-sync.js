@@ -50,10 +50,23 @@ export async function syncPricesToShopify(session, settings) {
     }
 
     const compareAtPrice = Number(product.compareAtPrice);
+
+    // Additive: when the product has an active variant-pricing mode, push
+    // each variant's own independently-calculated price instead of the
+    // single product-level price. Products without variant pricing (the
+    // vast majority, and all pre-existing configurations) take the original
+    // "same price on every variant" path below, unchanged.
+    const priceByVariantId = new Map(
+      (product.variantPrices || []).map((vp) => [vp.variantId, vp])
+    );
+
     const variants = product.variantIds.map((id) => {
-      const variantUpdate = { id, price: price.toFixed(2) };
-      if (Number.isFinite(compareAtPrice) && compareAtPrice > 0) {
-        variantUpdate.compareAtPrice = compareAtPrice.toFixed(2);
+      const vp = priceByVariantId.get(id);
+      const variantPrice = vp ? Number(vp.price) : price;
+      const variantCompareAt = vp ? Number(vp.compareAtPrice) : compareAtPrice;
+      const variantUpdate = { id, price: variantPrice.toFixed(2) };
+      if (Number.isFinite(variantCompareAt) && variantCompareAt > 0) {
+        variantUpdate.compareAtPrice = variantCompareAt.toFixed(2);
       }
       return variantUpdate;
     });

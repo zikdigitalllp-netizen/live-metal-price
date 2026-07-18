@@ -1,5 +1,6 @@
 // @ts-check
 import shopify from "../shopify.js";
+import { normalizeVariantPricing } from "./pricing.js";
 
 /**
  * Per-product pricing attributes, stored in Shopify Product Metafields
@@ -42,7 +43,22 @@ function normalizeConfigObject(obj) {
     profit_percent: config.profit_percent === undefined || config.profit_percent === "" || config.profit_percent === null ? null : Number(config.profit_percent),
     compare_at_profit_percent: config.compare_at_profit_percent === undefined || config.compare_at_profit_percent === "" || config.compare_at_profit_percent === null ? null : Number(config.compare_at_profit_percent),
     shipping_cost: config.shipping_cost === undefined || config.shipping_cost === "" || config.shipping_cost === null ? null : Number(config.shipping_cost),
+    // Additive: per-variant pricing config (null for simple products — no behavior change).
+    variant_pricing: normalizeVariantPricing(
+      typeof config.variant_pricing === "string"
+        ? safeParseJson(config.variant_pricing)
+        : config.variant_pricing
+    ),
   };
+}
+
+function safeParseJson(str) {
+  if (!str) return null;
+  try {
+    return JSON.parse(str);
+  } catch {
+    return null;
+  }
 }
 
 // Normalize from metafields array
@@ -261,6 +277,13 @@ export async function saveConfig(session, productId, patch) {
         key: "shipping_cost",
         value: next.shipping_cost !== null ? String(next.shipping_cost) : "0",
         type: "number_decimal",
+        ownerId: gid,
+      },
+      {
+        namespace: "zikmetal",
+        key: "variant_pricing",
+        value: JSON.stringify(next.variant_pricing || null),
+        type: "json",
         ownerId: gid,
       },
     ];

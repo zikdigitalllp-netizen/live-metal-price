@@ -107,3 +107,133 @@ export function resolveAttributes(config, settings = {}) {
     shipping_cost: pick(c.shipping_cost, defShip),
   };
 }
+
+/**
+ * ---------------------------------------------------------------------------
+ * Variant pricing (additive extension — does not alter anything above).
+ *
+ * A product with 2+ variants can opt into one of two modes, stored in the
+ * `zikmetal.variant_pricing` metafield (see product-config.js):
+ *
+ *   "weight"  — every variant gets its own weight (grams). Each variant's
+ *               price is computed independently with the exact same formula
+ *               used for simple products (calculatePrice above).
+ *
+ *   "manual"  — only the FIRST (base) variant is priced with the normal
+ *               formula, using the product's existing weight_grams /
+ *               making / gst / profit / shipping attributes. Every
+ *               subsequent variant (in Shopify's variant order) is the
+ *               previous variant's price plus a fixed increment.
+ *
+ * Products with no variant_pricing config, or with a single variant, are
+ * completely untouched by this code path — callers only invoke it when
+ * `variantPricing?.mode` is set AND there is more than one variant, so
+ * existing simple-product behavior is 100% preserved.
+ * ---------------------------------------------------------------------------
+ */
+
+/** Default increment (₹) used for Manual Variant Pricing when unset. */
+export const DEFAULT_VARIANT_INCREMENT = 3000;
+
+/**
+ * Compute an independent price for every variant.
+ *
+ * @param {Array<{id:string, title?:string}>} variants  Variants in Shopify's
+ *   display order (first = base variant for manual mode).
+ * @param {object} attrs  Resolved base attributes from resolveAttributes()
+ *   (making_charge_per_gram, gst_percent, profit_percent,
+ *   compare_at_profit_percent, shipping_cost, weight_grams as fallback).
+ * @param {number} silverRate  Live silver rate (per gram).
+ * @param {{mode:"weight"|"manual"|null, increment?:number,
+ *          variants?: Record<string,{weight_grams?: number}>}} variantPricing
+ * @returns {Array<{variantId:string, title:string, weightGrams:number|null,
+ *                   price:number, compareAtPrice:number, breakdown:object}>}
+ */
+export function calculateVariantPrices(variants, attrs, silverRate, variantPricing) {
+  const list = Array.isArray(variants) ? variants : [];
+  const mode = variantPricing?.mode;
+  if (!mode || list.length < 2) return [];
+
+  if (mode === "weight") {
+    const weightMap = variantPricing?.variants || {};
+    return list.map((v) => {
+      const override = weightMap[v.id];
+      const weightGrams =
+        override && override.weight_grams !== undefined && override.weight_grams !== null && override.weight_grams !== ""
+          ? Number(override.weight_grams)
+          : attrs.weight_grams;
+      const breakdown = calculatePrice(
+        weightGrams,
+        silverRate,
+        attrs.making_charge_per_gram,
+        attrs.gst_percent,
+        attrs.profit_percent,
+        attrs.shipping_cost,
+        attrs.compare_at_profit_percent
+      );
+      return {
+        variantId: v.id,
+        title: v.title || "",
+        weightGrams,
+        price: breakdown.finalPrice,
+        compareAtPrice: breakdown.compareAtPrice,
+        breakdown,
+      };
+    });
+  }
+
+  if (mode === "manual") {
+    const increment = Number(variantPricing?.increment);
+    const step = Number.isFinite(increment) && increment >= 0 ? increment : DEFAULT_VARIANT_INCREMENT;
+
+    // Base variant uses the product's normal (non-variant) attributes.
+    const baseBreakdown = calculatePrice(
+      attrs.weight_grams,
+      silverRate,
+      attrs.making_charge_per_gram,
+      attrs.gst_percent,
+      attrs.profit_percent,
+      attrs.shipping_cost,
+      attrs.compare_at_profit_percent
+    );
+
+    return list.map((v, index) => {
+      const price = Number((baseBreakdown.finalPrice + step * index).toFixed(2));
+      const compareAtPrice = Number((baseBreakdown.compareAtPrice + step * index).toFixed(2));
+      return {
+        variantId: v.id,
+        title: v.title || "",
+        weightGrams: index === 0 ? attrs.weight_grams : null,
+        price,
+        compareAtPrice,
+        breakdown: index === 0 ? baseBreakdown : null,
+      };
+    });
+  }
+
+  return [];
+}
+
+/** Normalize a raw variant_pricing value (from metafield JSON or request body). */
+export function normalizeVariantPricing(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const mode = raw.mode === "weight" || raw.mode === "manual" ? raw.mode : null;
+  if (!mode) return null;
+
+  const out = { mode };
+  if (mode === "manual") {
+    const inc = Number(raw.increment);
+    out.increment = Number.isFinite(inc) && inc >= 0 ? inc : DEFAULT_VARIANT_INCREMENT;
+  }
+  if (mode === "weight") {
+    const variants = {};
+    const src = raw.variants && typeof raw.variants === "object" ? raw.variants : {};
+    for (const [id, v] of Object.entries(src)) {
+      const w = v?.weight_grams;
+      if (w === undefined || w === null || w === "") continue;
+      variants[id] = { weight_grams: Number(w) || 0 };
+    }
+    out.variants = variants;
+  }
+  return out;
+}

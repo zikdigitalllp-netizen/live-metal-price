@@ -23,7 +23,8 @@
   {% if template.name == 'product' and product %}
     window.ZikMetalCurrentProduct = {
       id: {{ product.id | json }},
-      basePrice: {{ product.price | divided_by: 100.0 | json }}
+      basePrice: {{ product.price | divided_by: 100.0 | json }},
+      variantId: {{ product.selected_or_first_available_variant.id | json }}
     };
   {% endif %}
 </script>
