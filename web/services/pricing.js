@@ -105,6 +105,10 @@ export function resolveAttributes(config, settings = {}) {
     profit_percent: pick(c.profit_percent, defProfit),
     compare_at_profit_percent: pick(c.compare_at_profit_percent, defCompareAtProfit),
     shipping_cost: pick(c.shipping_cost, defShip),
+    // Additive: pass the stored per-product variant pricing config through
+    // untouched. This has no default — it's either the merchant's saved
+    // choice or null (= legacy single-price behavior).
+    variant_pricing: c.variant_pricing || null,
   };
 }
 
