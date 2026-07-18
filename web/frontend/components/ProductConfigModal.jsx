@@ -323,12 +323,15 @@ export function ProductConfigModal({ open, product, silverRate, defaults, onClos
 
                 {variantMode !== "none" && variantPreview.length > 0 ? (
                   <DataTable
-                    columnContentTypes={["text", "text", "numeric"]}
-                    headings={["Variant", "Weight", "Price"]}
+                    columnContentTypes={["text", "text", "numeric", "numeric"]}
+                    headings={["Variant", "Weight", "Price", "Compare at"]}
                     rows={variantPreview.map((p) => [
                       p.title,
                       p.weightGrams !== null && p.weightGrams !== undefined ? `${p.weightGrams} g` : "—",
                       formatMoney(p.price, product.currencyCode, "en-IN"),
+                      p.compareAtPrice > p.price
+                        ? formatMoney(p.compareAtPrice, product.currencyCode, "en-IN")
+                        : "—",
                     ])}
                   />
                 ) : null}
